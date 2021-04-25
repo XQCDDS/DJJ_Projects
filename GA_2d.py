@@ -122,8 +122,9 @@ def plot_2d(ax):
     ax.set_ylabel(u' y 轴')
     ax.set_xlim(X_BOUND[0], X_BOUND[1])
     ax.set_ylim(Y_BOUND[0], Y_BOUND[1])
-    # 解决中文显示问题
+    # 用来正常显示中文标签
     plt.rcParams['font.sans-serif'] = ['SimHei']
+    # 用来正常显示负号
     plt.rcParams['axes.unicode_minus'] = False
     plt.pause(3)
     plt.show()

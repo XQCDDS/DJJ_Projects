@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 import tkinter.messagebox  # 弹窗库
 from scipy import optimize as op  # 函数的曲线拟合
+import matplotlib.patches as mpatches  # 条形图绘图库
 from math import sqrt
 import timeit
 
@@ -17,9 +18,10 @@ Z_BOUND = [-10, 10]  # z取值范围
 ACCURACY = 100  # 取点精度
 FIT_CHOICE = True  # 适应方向
 EXPRESSION_3D = ""  # 函数表达式
-CURVE_POINT_3D = "(2,2,1),(2,0.3,0.15),(2,1,0.5),\
-    (1,1,1),(1,2,2),(1,0.3,0.3),\
-    (3,2,0.67),(3,1,0.33),(3,0.3,0.1)"  # 3D曲线拟合点
+CURVE_POINT_3D = "(100,20,8),(100,10,5),(100,50,9)," \
+                 "(400,20,3),(400,10,1),(400,50,6)," \
+                 "(300,20,4),(300,10,2),(300,50,7)"  # 3D曲线拟合点
+WORKPIECE = 5  # 工件数量
 
 
 # 编码
@@ -27,7 +29,7 @@ def set_3d_data(x, y):
     return eval(EXPRESSION_3D.replace("\n", "").replace("\\", "").replace("\"", "").replace("\'", "").lower())
 
 
-# 曲线拟合函数
+# 曲面拟合函数
 def set_curve_func(X, a, b):
     x = X[0]
     y = X[1]
@@ -40,6 +42,8 @@ def get_3d_popt():
     x_group = [strxyz[i][0] for i in range(len(strxyz))]
     y_group = [strxyz[j][1] for j in range(len(strxyz))]
     z_group = [strxyz[k][2] for k in range(len(strxyz))]
+    # 工序标号
+    xyz_index = [i + 1 for i in range(len(strxyz))]
     # 格式化数据
     for i in range(len(x_group) - 1):
         for j in range(i + 1, len(x_group)):
@@ -47,18 +51,27 @@ def get_3d_popt():
                 x_group[i], x_group[j] = x_group[j], x_group[i]
                 y_group[i], y_group[j] = y_group[j], y_group[i]
                 z_group[i], z_group[j] = z_group[j], z_group[i]
-    for i in range(round(sqrt(len(x_group))) - 1):
-        for j in range(i + 1, round(sqrt(len(x_group)))):
-            if x_group[i] > x_group[j]:
-                x_group[i], x_group[j] = x_group[j], x_group[i]
-                y_group[i], y_group[j] = y_group[j], y_group[i]
-                z_group[i], z_group[j] = z_group[j], z_group[i]
+                xyz_index[i], xyz_index[j] = xyz_index[j], xyz_index[i]
 
+    a = round(sqrt(len(x_group)))
+    for k in range(a):
+        for i in range(a - 1):
+            for j in range(i + 1, a):
+                if x_group[k * a + i] > x_group[k * a + j]:
+                    x_group[k * a + i], x_group[k * a + j] = x_group[k * a + j], x_group[k * a + i]
+                    y_group[k * a + i], y_group[k * a + j] = y_group[k * a + j], y_group[k * a + i]
+                    z_group[k * a + i], z_group[k * a + j] = z_group[k * a + j], z_group[k * a + i]
+                    xyz_index[k * a + i], xyz_index[k * a + j] = xyz_index[k * a + j], xyz_index[k * a + i]
+    a_work = x_group
+    b_work = y_group
     # 需要拟合的数据组，转为二维数组
-    x_group = np.array(list(set(x_group))).reshape(1, -1)
-    y_group = np.array(list(set(y_group))).reshape(1, -1)
+    x_group = list(set(x_group))
+    y_group = list(set(y_group))
+    x_group.sort()
+    y_group.sort()
+    x_group = np.array(x_group).reshape(1, -1)
+    y_group = np.array(y_group).reshape(1, -1)
     z_group = np.array(z_group)
-
     # 根据坐标矩阵生成网格点
     X, Y = np.meshgrid(x_group, y_group)
     # 提升到三维数组
@@ -68,7 +81,7 @@ def get_3d_popt():
     XY = np.append(XX, YY, axis=0)
 
     popt, pcov = op.curve_fit(set_curve_func, XY, z_group)
-    return x_group, y_group, z_group, popt, pcov
+    return x_group, y_group, z_group, xyz_index, a_work, b_work, popt, pcov
 
 
 # 解码
@@ -102,7 +115,7 @@ def get_fitness(pop):
         x, y = translateDNA(pop)
         z = set_3d_data(x, y)
     else:
-        x_group, y_group, z_group, popt, pcov = get_3d_popt()
+        x_group, y_group, z_group, xyz_index, a_work, b_work, popt, pcov = get_3d_popt()
         X_BOUND[0] = x_group[0][0]
         X_BOUND[1] = x_group[0][len(x_group[0]) - 1]
         Y_BOUND[0] = y_group[0][0]
@@ -170,13 +183,13 @@ def print_info(pop, t2):
         print("z:", set_3d_data(x[max_fitness_index], y[max_fitness_index]))
         mes = "最优的基因型: \n" + str(pop[max_fitness_index]) \
               + "\n\n最优解: \n(x, y): " + str((x[max_fitness_index], y[max_fitness_index])) \
-              + "\nz: " + str(set_3d_data(x[max_fitness_index], y[max_fitness_index]))\
+              + "\nz: " + str(set_3d_data(x[max_fitness_index], y[max_fitness_index])) \
               + "\n\n 结果：在成本为 " + str(x[max_fitness_index]) \
               + " ,效率为 " + str(y[max_fitness_index]) \
-              + " 的情况下\n价值最优为 " + str(set_3d_data(x[max_fitness_index], y[max_fitness_index]))\
+              + " 的情况下\n优先级最大为 " + str(set_3d_data(x[max_fitness_index], y[max_fitness_index])) \
               + "\n\n耗时:" + str(t2) + " 秒"
     else:
-        x_group, y_group, z_group, popt, pcov = get_3d_popt()
+        x_group, y_group, z_group, xyz_index, a_work, b_work, popt, pcov = get_3d_popt()
         X = x[max_fitness_index].reshape(1, -1)
         Y = y[max_fitness_index].reshape(1, -1)
         # 提升到三维数组
@@ -190,8 +203,68 @@ def print_info(pop, t2):
               + "\nz: " + str(set_curve_func(XY, *popt)) \
               + "\n\n 结果：在成本为 " + str(x[max_fitness_index]) \
               + " ,效率为 " + str(y[max_fitness_index]) \
-              + " 的情况下\n价值最优为 " + str(set_curve_func(XY, *popt)[0])\
-              + "\n\n耗时:" + str(t2) + " 秒"
+              + " 的情况下\n优先级最优大 " + str(set_curve_func(XY, *popt)[0]) \
+              + "\n\n最优加工顺序:"
+
+        x_group = x_group.ravel()
+        y_group = y_group.ravel()[::-1]
+
+        for i in range(len(x_group)):
+            for j in range(len(xyz_index)):
+                if x_group[i] == a_work[j] and y_group[i] == b_work[j]:
+                    mes = mes + "工序" + str(xyz_index[j]) + ", "
+
+        plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
+        plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
+
+        # 工作时间
+        work_time = np.zeros(WORKPIECE * len(x_group)).reshape(WORKPIECE, len(x_group)).tolist()
+        for i in range(len(x_group)):
+            for j in range(WORKPIECE):
+                work_time[j][i] = x_group[i] / WORKPIECE
+
+        # 工作时间点
+        work_point = np.zeros(WORKPIECE * len(x_group)).reshape(WORKPIECE, len(x_group)).tolist()
+        for i in range(len(x_group)):
+            for j in range(WORKPIECE):
+                if j == 0 and i == 0:
+                    work_point[j][i] = 0
+                elif j == 0:
+                    work_point[j][i] = work_point[j][i - 1] + work_time[j][i - 1]
+                else:
+                    work_point[j][i] = work_point[j - 1][i] + work_time[j - 1][i]
+
+        m = range(len(work_time))
+        n = range(len(work_time[0]))
+        color = ['b', 'g', 'r', 'y', 'c', 'm', 'k']
+
+        # 画布设置，大小与分辨率
+        plt.figure(figsize=(20, 8), dpi=80)
+
+        # barh-柱状图换向，循坏迭代-层叠效果
+        # y宽度,x长度，从多少x开始，颜色
+        for i in m:
+            for j in n:
+                plt.barh(m[i] + 1, work_time[i][j], left=work_point[i][j], color=color[j])
+        plt.title("流水线加工甘特图")
+        labels = [''] * len(work_time[0])
+
+        for i in range(len(x_group)):
+            for j in range(len(xyz_index)):
+                if x_group[i] == a_work[j] and y_group[i] == b_work[j]:
+                    labels[i] = "工序%d" % (xyz_index[j])
+        # 图例绘制
+        patches = [mpatches.Patch(color=color[i], label="{:s}".format(labels[i])) for i in range(len(work_time[0]))]
+        plt.legend(handles=patches, loc=4)
+        # XY轴标签
+        plt.xlabel("加工时间/s")
+        plt.ylabel("工件号")
+        # 网格线
+        plt.grid(linestyle="--", alpha=0.5)
+        plt.show()
+
+    mes = mes + "\n最大完工时间:" + str(work_point[-1][-1] + work_time[-1][-1]) \
+          + "\n\n耗时:" + str(t2) + " 秒"
 
     window = tkinter.Tk()
     window.title('结果')
@@ -221,7 +294,7 @@ def plot_3d(ax):
         plt.title(u'自定义函数: z= %s' % EXPRESSION_3D)
 
     else:
-        x_group, y_group, z_group, popt, pcov = get_3d_popt()
+        x_group, y_group, z_group, xyz_index, a_work, b_work, popt, pcov = get_3d_popt()
         X_BOUND[0] = x_group[0][0]
         X_BOUND[1] = x_group[0][len(x_group[0]) - 1]
         Y_BOUND[0] = y_group[0][0]
@@ -242,10 +315,11 @@ def plot_3d(ax):
 
     ax.set_xlabel(u' 成 本')
     ax.set_ylabel(u' 效 率')
-    ax.set_zlabel(u' 价 值')
+    ax.set_zlabel(u' 优先级 ')
 
-    # 解决中文显示问题
+    # 用来正常显示中文标签
     plt.rcParams['font.sans-serif'] = ['SimHei']
+    # 用来正常显示负号
     plt.rcParams['axes.unicode_minus'] = False
     plt.pause(3)
     plt.show()
@@ -270,7 +344,7 @@ def print_3d():
             # 数据点与原先的进行画图比较，在曲面上生成个体黑点
             dna = ax.scatter(x, y, set_3d_data(x, y), c='black', marker='o')
         else:
-            x_group, y_group, z_group, popt, pcov = get_3d_popt()
+            x_group, y_group, z_group, xyz_index, a_work, b_work, popt, pcov = get_3d_popt()
             X_BOUND[0] = x_group[0][0]
             X_BOUND[1] = x_group[0][len(x_group[0]) - 1]
             Y_BOUND[0] = y_group[0][0]
@@ -285,8 +359,9 @@ def print_3d():
             XY = np.append(XX, YY, axis=0)
             dna = ax.scatter(x, y, set_curve_func(XY, *popt), c='black', marker='o', label=u'数据点')
 
-        # 解决中文显示问题
+        # 用来正常显示中文标签
         plt.rcParams['font.sans-serif'] = ['SimHei']
+        # 用来正常显示负号
         plt.rcParams['axes.unicode_minus'] = False
 
         plt.show()
