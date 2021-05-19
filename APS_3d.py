@@ -263,8 +263,8 @@ def print_info(pop, t2):
         plt.grid(linestyle="--", alpha=0.5)
         plt.show()
 
-    mes = mes + "\n最大完工时间:" + str(work_point[-1][-1] + work_time[-1][-1]) \
-          + "\n\n耗时:" + str(t2) + " 秒"
+        mes = mes + "\n最大完工时间:" + str(work_point[-1][-1] + work_time[-1][-1]) \
+              + "\n\n耗时:" + str(t2) + " 秒"
 
     window = tkinter.Tk()
     window.title('结果')
