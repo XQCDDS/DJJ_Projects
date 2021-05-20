@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tkinter.messagebox  # 弹窗库
 from scipy import optimize as op  # 函数的曲线拟合
+import matplotlib.patches as mpatches  # 条形图绘图库
 import timeit
 
 DNA_SIZE = 24  # 编码长度
@@ -14,7 +15,8 @@ Y_BOUND = [-3, 3]  # y取值范围
 ACCURACY = 100  # 取点精度
 FIT_CHOICE = True  # 适应方向
 EXPRESSION_2D = ""  # 函数表达式
-CURVE_POINT_2D = "(1,2),(2,1),(3,0.3)"  # 2D曲线拟合点
+CURVE_POINT_2D = "(200,2),(100,3),(300,1)"  # 2D曲线拟合点
+WORKPIECE = 5  # 工件数量
 
 
 # 编码
@@ -31,12 +33,15 @@ def get_2d_popt():
     strxy = eval(CURVE_POINT_2D.replace("\n", ",").replace(",,", ",").replace("\"", "").replace("\'", ""))
     x_group = [strxy[i][0] for i in range(len(strxy))]
     y_group = [strxy[j][1] for j in range(len(strxy))]
+    # 工序标号
+    xy_index = [i + 1 for i in range(len(strxy))]
     # 数据点按X大小排序
     for i in range(len(x_group) - 1):
         for j in range(i + 1, len(x_group)):
             if x_group[i] > x_group[j]:
                 x_group[i], x_group[j] = x_group[j], x_group[i]
                 y_group[i], y_group[j] = y_group[j], y_group[i]
+                xy_index[i], xy_index[j] = xy_index[j], xy_index[i]
     # 需要拟合的数据组
     x_group = np.array(x_group)
     y_group = np.array(y_group)
@@ -46,7 +51,7 @@ def get_2d_popt():
     # popt是数组 参数的最佳值，以使平方残差之和最小。f(xdata, *popt) - ydata
     # pcov是二维阵列，popt的估计协方差。对角线提供参数估计的方差。当要使用参数计算一个标准偏差
     popt, pcov = op.curve_fit(set_curve_func, x_group, y_group)
-    return x_group, y_group, popt, pcov
+    return x_group, y_group, xy_index, popt, pcov
 
 
 # 解码
@@ -70,7 +75,7 @@ def get_fitness(pop):
         x = translateDNA(pop)
         y = set_2d_data(x)
     else:
-        x_group, y_group, popt, pcov = get_2d_popt()
+        x_group, y_group, xy_index, popt, pcov = get_2d_popt()
         X_BOUND[0] = x_group[0]
         X_BOUND[1] = x_group[len(x_group) - 1]
         x = translateDNA(pop)
@@ -134,16 +139,65 @@ def print_info(pop, t2):
               + "\n\n最优解:\nx: " + str(x[max_fitness_index]) \
               + "\ny: " + str(set_2d_data(x[max_fitness_index])) \
               + "\n\n 结果：在成本为 " + str(x[max_fitness_index]) \
-              + " 的情况下\n价值最优为 " + str(set_2d_data(x[max_fitness_index]))\
+              + " 的情况下\n优先级最大为 " + str(set_2d_data(x[max_fitness_index])) \
               + "\n\n耗时:" + str(t2) + " 秒"
     else:
-        x_group, y_group, popt, pcov = get_2d_popt()
+        x_group, y_group, xy_index, popt, pcov = get_2d_popt()
         print("y:", set_curve_func(x[max_fitness_index], *popt))
         mes = "最优的基因型: \n" + str(pop[max_fitness_index]) \
               + "\n\n最优解:\nx: " + str(x[max_fitness_index]) \
               + "\ny: " + str(set_curve_func(x[max_fitness_index], *popt)) \
               + "\n\n 结果：在成本为 " + str(x[max_fitness_index]) \
-              + " 的情况下\n价值最优为 " + str(set_curve_func(x[max_fitness_index], *popt))\
+              + " 的情况下\n优先级最大为 " + str(set_curve_func(x[max_fitness_index], *popt)) \
+              + "\n\n最优加工顺序:"
+        for i in range(len(x_group)):
+            mes = mes + "工序" + str(xy_index[i]) + ", "
+
+        plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
+        plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
+
+        work_time = np.zeros(WORKPIECE * len(x_group)).reshape(WORKPIECE, len(x_group)).tolist()
+        for i in range(len(x_group)):
+            for j in range(WORKPIECE):
+                work_time[j][i] = x_group[i] / WORKPIECE
+
+        work_point = np.zeros(WORKPIECE * len(x_group)).reshape(WORKPIECE, len(x_group)).tolist()
+        for i in range(len(x_group)):
+            for j in range(WORKPIECE):
+                if j == 0 and i == 0:
+                    work_point[j][i] = 0
+                elif j == 0:
+                    work_point[j][i] = work_point[j][i - 1] + work_time[j][i - 1]
+                else:
+                    work_point[j][i] = work_point[j - 1][i] + work_time[j - 1][i]
+
+        m = range(len(work_time))
+        n = range(len(work_time[0]))
+        color = ['b', 'g', 'r', 'y', 'c', 'm', 'k']
+
+        # 画布设置，大小与分辨率
+        plt.figure(figsize=(20, 8), dpi=80)
+
+        # barh-柱状图换向，循坏迭代-层叠效果
+        # y宽度,x长度，从多少x开始，颜色
+        for i in m:
+            for j in n:
+                plt.barh(m[i] + 1, work_time[i][j], left=work_point[i][j], color=color[j])
+        plt.title("流水线加工甘特图")
+        labels = [''] * len(work_time[0])
+        for f in n:
+            labels[f] = "工序%d" % (xy_index[f])
+        # 图例绘制
+        patches = [mpatches.Patch(color=color[i], label="{:s}".format(labels[i])) for i in range(len(work_time[0]))]
+        plt.legend(handles=patches, loc=4)
+        # XY轴标签
+        plt.xlabel("加工时间/s")
+        plt.ylabel("工件号")
+        # 网格线
+        plt.grid(linestyle="--", alpha=0.5)
+        plt.show()
+
+        mes = mes + "\n最大完工时间:" + str(work_point[-1][-1] + work_time[-1][-1]) \
               + "\n\n耗时:" + str(t2) + " 秒"
 
     window = tkinter.Tk()
@@ -168,7 +222,7 @@ def plot_2d(ax):
         ax.set_ylim(Y_BOUND[0], Y_BOUND[1])
     else:
         pop = np.random.randint(2, size=(POP_SIZE, DNA_SIZE))
-        x_group, y_group, popt, pcov = get_2d_popt()
+        x_group, y_group, xy_index, popt, pcov = get_2d_popt()
         # 生成原始数据
         plt.plot(x_group, y_group, 'b-')
         ax.scatter(x_group, y_group, c='blue', marker='o', label=u'原始数据')
@@ -181,11 +235,12 @@ def plot_2d(ax):
         ax.plot(X, Y, color='red', label=u'拟合函数: y=%5.3f/x%+5.3f' % tuple(popt))
 
     ax.set_xlabel(u' 成 本')
-    ax.set_ylabel(u' 价 值')
+    ax.set_ylabel(u' 优先级')
     # 加上图例
     plt.legend()
-    # 解决中文显示问题
+    # 用来正常显示中文标签
     plt.rcParams['font.sans-serif'] = ['SimHei']
+    # 用来正常显示负号
     plt.rcParams['axes.unicode_minus'] = False
     plt.pause(3)
     plt.show()
@@ -211,15 +266,16 @@ def print_2d():
             x = translateDNA(pop)
             dna = ax.scatter(x, set_2d_data(x), c='black', marker='o', label=u'数据点')
         else:
-            x_group, y_group, popt, pcov = get_2d_popt()
+            x_group, y_group, xy_index, popt, pcov = get_2d_popt()
             X_BOUND[0] = x_group[0]
             X_BOUND[1] = x_group[len(x_group) - 1]
             x = translateDNA(pop)
 
             dna = ax.scatter(x, set_curve_func(x, *popt), c='black', marker='o', label=u'数据点')
 
-        # 解决中文显示问题
+        # 用来正常显示中文标签
         plt.rcParams['font.sans-serif'] = ['SimHei']
+        # 用来正常显示负号
         plt.rcParams['axes.unicode_minus'] = False
         # 加上图例
         plt.legend()
